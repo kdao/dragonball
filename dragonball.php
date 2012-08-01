@@ -2,7 +2,15 @@
 if(!defined('sugarEntry'))define('sugarEntry', true);
 if(!empty($argv[1])){
     chdir($argv[1]);
-    echo "\nChanging Directory To: {$argv[1]}";
+    echo "\nChanging Directory To: {$argv[1]} \n\n";
+}
+
+$outputCSVFile = "";
+foreach ( $argv as $arg ) {
+    if (substr($arg, 0, 2) == '-o') {
+	$tokens = explode("=", $arg);
+	$outputCSVFile = $tokens[1];
+    }
 }
 
 require_once('include/entryPoint.php');
@@ -39,6 +47,17 @@ class Goku {
         if( !isset( $this->bean->table_name ) ){
             $this->skip = true;
         }
+    }
+
+    /*
+    * return bean
+    */
+    function getBean() {
+	return $this->bean;
+    }
+
+    function isSkip() {
+	return $this->skip;
     }
 
     /*
@@ -115,10 +134,12 @@ class Goku {
     */
     function getNumberOfCustomFields() {
 	$customFieldCount = 0;
-	foreach ( $this->bean->field_defs as $field=>$info ) {
-	    if ( isset( $info['source'] ) && $info['source'] == 'custom_fields' ) {
-		$customFieldCount++;
-	    }
+	if ( $this->bean->field_defs ) {
+	    foreach ( $this->bean->field_defs as $field=>$info ) {
+		if ( isset( $info['source'] ) && $info['source'] == 'custom_fields' ) {
+		    $customFieldCount++;
+		}
+	    } 
 	}
 	return $customFieldCount; 
     }
@@ -158,6 +179,9 @@ class Goku {
     }
 
 
+    /*
+    * Formats the human readable strings of records creatd and modified per month
+    */
     function formatRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth ) {
 	$records = array();
 	foreach ( $recordsCreatedPerMonth as $month=>$count ) {
@@ -186,6 +210,15 @@ class Goku {
 	}
 
 	return $recordsStr;
+    }
+
+    function toString( $records ) {
+	$rtnStr = "";
+	foreach ( $records as $month=>$count ) {
+	    $rtnStr .= $month . " " . $count . " | ";
+	}
+	$rtnStr = substr( $rtnStr, 0, -3 );
+	return $rtnStr;
     }
 
 
@@ -232,9 +265,57 @@ class DragonBall {
     }
 
 
+    /*
+    * put to csv file
+    */
+    function putCSVFile( $outputCSVFile ) {
+	$list = array(
+	    array('MODULE', 'TABLE', 'CUSTOM FIELDS', 'TOTAL RECORDS', 'LIVE RECORDS', 'AUDIT RECORDS', 'CUSTOM RECORDS', 'NUMBER OF USERS', 'AVG RECRODS/USER', 'RECORDSCREATED/MONTH', 'RECORDSMODIFIED/MONTH')
+	);
+	foreach( $GLOBALS['beanList'] as $module=>$bean ) {
+	    $goku = new Goku( $module );
+	    if ( !$goku->isSkip() ) {
+		$list[] = array( 
+		    $goku->module,
+		    $goku->getBean()->table_name,
+		    $goku->getNumberOfCustomFields(),
+		    $goku->getRecordCount(),
+		    $goku->getLiveRecordCount(),
+		    $goku->getNumberOfAuditRecords(),
+		    $goku->getNumberOfCustomRecords(),
+		    $goku->getNumberOfUsers(),
+		    $goku->getAverageRecordsPerUser(),
+		    $goku->toString($goku->getRecordsCreatedPerMonth()),
+		    $goku->toString($goku->getRecordsModifiedPerMonth()),
+		);
+	    }
+	}
+
+	$fp = fopen( $outputCSVFile, 'w' );
+
+	if (function_exists( 'fputcsv' ) ) {;
+	    foreach ( $list as $record ) {
+		fputcsv( $fp, $record );
+	    }
+	} else {
+	    foreach ( $list as $record ) {
+		fwrite( $fp, implode(", ", $record ) . "\n" );
+	    }
+	}
+
+	fclose( $fp );
+
+    }
+
+
+
+
 }
 
 echo("\n");
 $dragonball = new DragonBall();
+if ( $outputCSVFile ) {
+    $dragonball->putCSVFile( $outputCSVFile );
+}
 $dragonball->scan();
 echo("\n");
