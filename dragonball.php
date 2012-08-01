@@ -6,10 +6,15 @@ if(!empty($argv[1])){
 }
 
 $outputCSVFile = "";
+$monthCSVFile = "";
 foreach ( $argv as $arg ) {
     if (substr($arg, 0, 2) == '-o') {
 	$tokens = explode("=", $arg);
 	$outputCSVFile = $tokens[1];
+    }
+    if (substr($arg, 0, 2) == '-m') {
+	$tokens = explode("=", $arg);
+	$monthCSVFile = $tokens[1];
     }
 }
 
@@ -183,6 +188,21 @@ class Goku {
     * Formats the human readable strings of records creatd and modified per month
     */
     function formatRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth ) {
+	$records = $this->getCombinedRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth );
+	
+	// format 
+	$recordsStr = "";
+	foreach( $records as $month=>$info ) {
+	    $recordsStr .= $month . " Created: " . $records[$month]['created'] . " Modified: " . $records[$month]['modified'] . "\n";
+	}
+
+	return $recordsStr;
+    }
+
+    /*
+    *
+    */
+    function getCombinedRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth ) {
 	$records = array();
 	foreach ( $recordsCreatedPerMonth as $month=>$count ) {
 	    $records[$month]['created'] = $count;
@@ -202,16 +222,12 @@ class Goku {
 	    $compareField[] = $records[$month]['monthStr'];
 	}
 	array_multisort( $compareField, SORT_DESC, $records ); // sort recent first
-
-	// format 
-	$recordsStr = "";
-	foreach( $records as $month=>$info ) {
-	    $recordsStr .= $month . " Created: " . $records[$month]['created'] . " Modified: " . $records[$month]['modified'] . "\n";
-	}
-
-	return $recordsStr;
+	return $records;
     }
 
+    /*
+    *
+    */
     function toString( $records ) {
 	$rtnStr = "";
 	foreach ( $records as $month=>$count ) {
@@ -270,7 +286,7 @@ class DragonBall {
     */
     function putCSVFile( $outputCSVFile ) {
 	$list = array(
-	    array('MODULE', 'TABLE', 'CUSTOM FIELDS', 'TOTAL RECORDS', 'LIVE RECORDS', 'AUDIT RECORDS', 'CUSTOM RECORDS', 'NUMBER OF USERS', 'AVG RECRODS/USER', 'RECORDSCREATED/MONTH', 'RECORDSMODIFIED/MONTH')
+	    array('MODULE', 'TABLE', 'CUSTOM_FIELDS', 'TOTAL_RECORDS', 'LIVE_RECORDS', 'AUDIT_RECORDS', 'CUSTOM_RECORDS', 'NUMBER_OF_USERS', 'AVG_RECRODS/USER', 'RECORDSCREATED/MONTH', 'RECORDSMODIFIED/MONTH')
 	);
 	foreach( $GLOBALS['beanList'] as $module=>$bean ) {
 	    $goku = new Goku( $module );
@@ -307,6 +323,44 @@ class DragonBall {
 
     }
 
+    /*
+    * Returns activities by month
+    */
+    function putActivitiesByMonthCSVFile( $monthCSVFile ) {
+	$list = array(
+	    array('MONTH', 'RECORDS_CREATED', 'RECORDS_MODIFIED', 'MODULE' ),
+	);
+	foreach ( $GLOBALS['beanList'] as $module=>$bean ) {
+	    $goku = new Goku( $module );
+	    if ( !$goku->isSkip() ) {
+		$combinedRecord = $goku->getCombinedRecords( $goku->getRecordsCreatedPerMonth(), $goku->getRecordsModifiedPerMonth() );
+		foreach ( $combinedRecord as $month=>$activities ) {
+		    $list[] = array (
+			$month,
+			$combinedRecord[$month]['created'],
+			$combinedRecord[$month]['modified'],
+			$goku->module,
+		    );
+		}
+	    }
+	}
+
+	$fp = fopen( $monthCSVFile, 'w' );
+
+	if (function_exists( 'fputcsv' ) ) {;
+	    foreach ( $list as $record ) {
+		fputcsv( $fp, $record );
+	    }
+	} else {
+	    foreach ( $list as $record ) {
+		fwrite( $fp, implode(", ", $record ) . "\n" );
+	    }
+	}
+
+	fclose( $fp );
+
+    }
+
 
 
 
@@ -316,6 +370,9 @@ echo("\n");
 $dragonball = new DragonBall();
 if ( $outputCSVFile ) {
     $dragonball->putCSVFile( $outputCSVFile );
+}
+if ( $monthCSVFile ) {
+    $dragonball->putActivitiesByMonthCSVFile( $monthCSVFile );
 }
 $dragonball->scan();
 echo("\n");
