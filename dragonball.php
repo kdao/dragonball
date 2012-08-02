@@ -1,12 +1,17 @@
 <?php
+
 if(!defined('sugarEntry'))define('sugarEntry', true);
-if(!empty($argv[1])){
-    chdir($argv[1]);
+
+
+// check for command arguments and flags
+if ( !empty( $argv[1] ) ) {
+    chdir( $argv[1] ); // sugarcrm directory
     echo "\nChanging Directory To: {$argv[1]} \n\n";
 }
 
 $outputCSVFile = "";
 $monthCSVFile = "";
+$help = false;
 foreach ( $argv as $arg ) {
     if (substr($arg, 0, 2) == '-o') {
 	$tokens = explode("=", $arg);
@@ -16,11 +21,17 @@ foreach ( $argv as $arg ) {
 	$tokens = explode("=", $arg);
 	$monthCSVFile = $tokens[1];
     }
+    if ($arg == '--help') {
+	$help = true;
+    }
 }
 
+
+// require files
 require_once('include/entryPoint.php');
 require_once('include/utils.php');
 require_once('config.php');
+require_once('sugar_version.php');
 require_once('include/modules.php');
 require_once('include/database/DBManagerFactory.php');
 require_once('include/SugarTheme/SugarTheme.php');
@@ -40,11 +51,16 @@ if (file_exists('include/modules_override.php')) {
     require_once('include/modules_override.php');
 }
 
+
+/*
+* Goku class to track the usage in each module
+*/
 class Goku {
 
     protected $bean = null;
 
     protected $skip = null;
+
 
     function __construct( $module ) {
         $this->module = $module;
@@ -189,27 +205,44 @@ class Goku {
     */
     function formatRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth ) {
 	$records = $this->getCombinedRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth );
-	
-	// format 
 	$recordsStr = "";
+	
 	foreach( $records as $month=>$info ) {
-	    $recordsStr .= $month . " Created: " . $records[$month]['created'] . " Modified: " . $records[$month]['modified'] . "\n";
+	    $recordsStr .= "\n" . $month . " Created: " . $records[$month]['created'] . " Modified: " . $records[$month]['modified'];
 	}
 
 	return $recordsStr;
     }
 
     /*
-    *
+    * Get license key from the config table
+    */
+    function getLicenseKey() {
+	$result = $GLOBALS['db']->query( "SELECT value AS licenseKey FROM config WHERE name=\"key\" and category=\"license\" ");
+	$row = $GLOBALS['db']->fetchByAssoc( $result );
+	return isset( $row['licenseKey'] ) ? $row['licenseKey'] : 'N/A';
+	
+    }
+
+    /*
+    * Combine the info about recrods created per month and records modified per month
+    * to return 1 single array
     */
     function getCombinedRecords( $recordsCreatedPerMonth, $recordsModifiedPerMonth ) {
 	$records = array();
 	foreach ( $recordsCreatedPerMonth as $month=>$count ) {
+	    if ( !isset( $records[$month] ) ) {
+		$records[$month] = array();
+	    }
 	    $records[$month]['created'] = $count;
 	}
 	foreach ( $recordsModifiedPerMonth as $month=>$count ) {
+	    if ( !isset( $records[$month] ) ) {
+		$records[$month] = array();
+	    }
 	    $records[$month]['modified'] = $count;
 	}
+	
 	// file in the blanks
 	foreach ( $records as $month=>$info ) {
 	    if( !isset( $records[$month]['created'] ) ) $records[$month]['created'] = 0;
@@ -226,12 +259,13 @@ class Goku {
     }
 
     /*
-    *
+    * format all the activities in to one string separated by | to put into one cell of csv
+    * eg: 2012-07 12 | 2012-06 43
     */
-    function toString( $records ) {
+    function toString( $activitiesByMonth ) {
 	$rtnStr = "";
-	foreach ( $records as $month=>$count ) {
-	    $rtnStr .= $month . " " . $count . " | ";
+	foreach ( $activitiesByMonth as $month=>$count ) {
+	    $rtnStr .= $month . " " . $count . " | "
 	}
 	$rtnStr = substr( $rtnStr, 0, -3 );
 	return $rtnStr;
@@ -258,6 +292,7 @@ Custom Records: {$this->getNumberOfCustomRecords()}
 Number of Users: {$this->getNumberOfUsers()}
 Avg Records Per User: {$this->getAverageRecordsPerUser()}
 {$this->formatRecords( $this->getRecordsCreatedPerMonth(), $this->getRecordsModifiedPerMonth() )}
+License Key: {$this->getLicenseKey()}
 
 EOQ;
 
@@ -266,8 +301,22 @@ EOQ;
 }
 
 
+/*
+* Class that runs the usage of all modules
+*/
 class DragonBall {
 
+    function overview() {
+	include('sugar_version.php');
+	echo("\nOverview About Sugar Version");
+	echo("\n----------------------------");
+	echo("\nSugar Version: " . $sugar_version);
+	echo("\nSugar DB Version: " . $sugar_db_version);
+	echo("\nSugar Flavor: " . $sugar_flavor);
+	echo("\nSugar Build: " . $sugar_build);
+	echo("\nSugar Timestamp: " . $sugar_timestamp);
+	echo("\n----------------------------");
+    }
 
     /*
     * Gives the reports
@@ -285,8 +334,9 @@ class DragonBall {
     * put to csv file
     */
     function putCSVFile( $outputCSVFile ) {
+	include('sugar_version.php');
 	$list = array(
-	    array('MODULE', 'TABLE', 'CUSTOM_FIELDS', 'TOTAL_RECORDS', 'LIVE_RECORDS', 'AUDIT_RECORDS', 'CUSTOM_RECORDS', 'NUMBER_OF_USERS', 'AVG_RECRODS/USER', 'RECORDSCREATED/MONTH', 'RECORDSMODIFIED/MONTH')
+	    array('MODULE', 'TABLE', 'CUSTOM_FIELDS', 'TOTAL_RECORDS', 'LIVE_RECORDS', 'AUDIT_RECORDS', 'CUSTOM_RECORDS', 'NUMBER_OF_USERS', 'AVG_RECRODS/USER', 'RECORDSCREATED/MONTH', 'RECORDSMODIFIED/MONTH', 'SUGAR_VERSION', 'SUGAR_DB_VERSION', 'SUGAR_FLAVOR', 'SUGAR_BUILD', 'SUGAR_TIMESTAMP', 'LICENSE_KEY')
 	);
 	foreach( $GLOBALS['beanList'] as $module=>$bean ) {
 	    $goku = new Goku( $module );
@@ -303,6 +353,12 @@ class DragonBall {
 		    $goku->getAverageRecordsPerUser(),
 		    $goku->toString($goku->getRecordsCreatedPerMonth()),
 		    $goku->toString($goku->getRecordsModifiedPerMonth()),
+		    $sugar_version,
+		    $sugar_db_version,
+		    $sugar_flavor,
+		    $sugar_build,
+		    $sugar_timestamp,
+		    $goku->getLicenseKey(),
 		);
 	    }
 	}
@@ -327,8 +383,9 @@ class DragonBall {
     * Returns activities by month
     */
     function putActivitiesByMonthCSVFile( $monthCSVFile ) {
+	include('sugar_version.php');
 	$list = array(
-	    array('MONTH', 'RECORDS_CREATED', 'RECORDS_MODIFIED', 'MODULE' ),
+	    array('MONTH', 'RECORDS_CREATED', 'RECORDS_MODIFIED', 'MODULE', 'SUGAR_VERSION', 'SUGAR_DB_VERSION', 'SUGAR_FLAVOR', 'SUGAR_BUILD', 'SUGAR_TIMESTAMP', 'LICENSE_KEY' ),
 	);
 	foreach ( $GLOBALS['beanList'] as $module=>$bean ) {
 	    $goku = new Goku( $module );
@@ -340,6 +397,12 @@ class DragonBall {
 			$combinedRecord[$month]['created'],
 			$combinedRecord[$month]['modified'],
 			$goku->module,
+			$sugar_version,
+			$sugar_db_version,
+			$sugar_flavor,
+			$sugar_build,
+			$sugar_timestamp,
+			$goku->getLicenseKey(),
 		    );
 		}
 	    }
@@ -361,18 +424,36 @@ class DragonBall {
 
     }
 
-
-
+    /*
+    *
+    */
+    function printHelpMessage() {
+	echo("\nUsage: php dragonball.php [-OPTIONS]");
+	echo("\nOR:    /Applications/MAMP/bin/php/php5.3.6/bin/php dragonball.php [-OPTIONS]");
+	echo("\n");
+	echo("\n\t-m\t\tspecified csv file for month activities");
+	echo("\n\t-o\t\tspecified csv file for activities by module");
+	echo("\n\n");
+    }
 
 }
 
 echo("\n");
 $dragonball = new DragonBall();
+if ( $help ) {
+    $dragonball->printHelpMessage();
+    exit();
+}
 if ( $outputCSVFile ) {
     $dragonball->putCSVFile( $outputCSVFile );
 }
 if ( $monthCSVFile ) {
     $dragonball->putActivitiesByMonthCSVFile( $monthCSVFile );
 }
+$dragonball->overview();
 $dragonball->scan();
+
+//print_r( $sugar_config );
+echo("\n");
+//print_r( $sugar_version );
 echo("\n");
